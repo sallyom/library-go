@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog"
 
 	"github.com/prometheus/common/model"
 )
@@ -85,8 +86,6 @@ func LocatePrometheus(client *kubernetes.Clientset) (string, bool) {
 	return bearerToken, true
 }
 
-const waitForPrometheusStartSeconds = 240
-
 type prometheusResponse struct {
 	Status string                 `json:"status"`
 	Data   prometheusResponseData `json:"data"`
@@ -98,7 +97,6 @@ type prometheusResponseData struct {
 }
 
 func (pq *PrometheusClient) getQueryResponse() ([]byte, error) {
-	//cmd := fmt.Sprintf("curl -s -k -H 'Authorization: Bearer %s' %q", bearer, url)
 	req, err := http.NewRequest("GET", pq.URL, nil)
 	if err != nil {
 		return nil, err
@@ -110,6 +108,8 @@ func (pq *PrometheusClient) getQueryResponse() ([]byte, error) {
 		return nil, fmt.Errorf("curl command failed: %v\n%v", err, resp)
 	}
 	defer resp.Body.Close()
+	curl := fmt.Sprintf("curl -s -k -H 'Authorization: Bearer %s' %q", pq.BearerToken, pq.URL)
+	klog.Infof("CURL: %s", curl)
 
 	body, err := ioutil.ReadAll(resp.Body)
 	return body, nil
@@ -119,8 +119,8 @@ func (pq *PrometheusClient) getQueryResponse() ([]byte, error) {
 // example: query := `ALERTS{alertstate="pending",alertname="PodDisruptionBudgetAtLimit",severity="warning"} == 1`
 func (pq *PrometheusClient) RunPrometheusQuery() (model.Vector, error) {
 	// expect all correct metrics within a reasonable time period
-        var metrics model.Vector
-	err := wait.Poll(time.Second*1, time.Second*waitForPrometheusStartSeconds, func() (bool, error) {
+    var metrics model.Vector
+	err := wait.Poll(time.Second*1, time.Second*60, func() (bool, error) {
 		//TODO when the http/query apis discussed at https://github.com/prometheus/client_golang#client-for-the-prometheus-http-api
 		// and introduced at https://github.com/prometheus/client_golang/blob/master/api/prometheus/v1/api.go are vendored into
 		// openshift/origin, look to replace this homegrown http request / query param with that API
